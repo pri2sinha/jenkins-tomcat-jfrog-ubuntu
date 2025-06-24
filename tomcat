@@ -1,1 +1,7 @@
-
+ sudo apt update -y
+ sudo wget https://dlcdn.apache.org/tomcat/tomcat-9/v9.0.102/bin/apache-tomcat-9.0.102.tar.gz
+sudo apt install openjdk-17-jdk -y
+ sudo tar -zxvf apache-tomcat-9.0.102.tar.gz
+sudo vim webapps/manager/META-INF/context.xml #delete two lines 21 and 22
+ sudo vim conf/tomcat-users.xml #add user and passwd
+ sudo ./bin/startup.sh
