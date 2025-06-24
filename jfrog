@@ -10,13 +10,13 @@ sudo apt install openjdk-8-jdk unzip wget -y
 java -version
 
 # Download JFrog Artifactory OSS
-wget https://releases.jfrog.io/artifactory/artifactory-oss/org/artifactory/oss/jfrog-artifactory-oss/6.9.6/jfrog-artifactory-oss-6.9.6.zip
+#wget https://releases.jfrog.io/artifactory/artifactory-oss/org/artifactory/oss/jfrog-artifactory-oss/6.9.6/jfrog-artifactory-oss-6.9.6.zip
+wget https://releases.jfrog.io/artifactory/bintray-artifactory/org/artifactory/oss/jfrog-artifactory-oss/7.63.8/jfrog-artifactory-oss-7.63.8-linux.tar.gz
 
-# Unzip it
-unzip jfrog-artifactory-oss-6.9.6.zip
+tar -xvzf jfrog-artifactory-oss-7.63.8-linux.tar.gz
 
 # Start Artifactory
-cd jfrog-artifactory-oss-6.9.6
+cd artifactory-oss-7.63.8
 bash bin/artifactory.sh start
 
 
