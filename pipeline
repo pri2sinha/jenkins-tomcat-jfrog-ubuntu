@@ -1,1 +1,101 @@
+pipeline {
+    agent any
+    parameters {
+        booleanParam(name: 'DEPLOY_TOMCAT1', defaultValue: true, description: 'Deploy to Tomcat1 (10.0.1.0)')
+        booleanParam(name: 'DEPLOY_TOMCAT2', defaultValue: true, description: 'Deploy to Tomcat2 (10.0.2.0)')
+    }
+    environment {
+        JAR_FILE = "/var/lib/jenkins/workspace/jarfiledeploy/upi-acq-vo-1.0.121.UAT.jar"
+        TOMCAT_USER = "ubuntu"
+        TOMCAT1_IP = "10.0.1.0"
+        TOMCAT2_IP = "10.0.2.0"
+        DEPLOY_PATH = "/home/ubuntu/deploy"
+        SSH_CREDENTIALS_ID = "7e4031ee-9f2c-4479-b3ee-00a97373fbb1"
+        DEPLOY_CONTEXT = "upi-acq-vo" // replace with actual context path if different
+    }
+    stages {
+        stage('Verify SSH Connections') {
+            steps {
+                script {
+                    withCredentials([sshUserPrivateKey(
+                        credentialsId: env.SSH_CREDENTIALS_ID,
+                        keyFileVariable: 'SSH_KEY_PATH',
+                        usernameVariable: 'SSH_USER'
+                    )]) {
+                        if (params.DEPLOY_TOMCAT1) {
+                            sh "ssh -o StrictHostKeyChecking=no -i \$SSH_KEY_PATH \$SSH_USER@${TOMCAT1_IP} 'echo Tomcat1 Connected'"
+                        }
+                        if (params.DEPLOY_TOMCAT2) {
+                            sh "ssh -o StrictHostKeyChecking=no -i \$SSH_KEY_PATH \$SSH_USER@${TOMCAT2_IP} 'echo Tomcat2 Connected'"
+                        }
+                    }
+                }
+            }
+        }
 
+        stage('Deploy JAR') {
+            steps {
+                script {
+                    withCredentials([sshUserPrivateKey(
+                        credentialsId: env.SSH_CREDENTIALS_ID,
+                        keyFileVariable: 'SSH_KEY_PATH',
+                        usernameVariable: 'SSH_USER'
+                    )]) {
+                        if (params.DEPLOY_TOMCAT1) {
+                            sh "scp -o StrictHostKeyChecking=no -i \$SSH_KEY_PATH ${JAR_FILE} \$SSH_USER@${TOMCAT1_IP}:${DEPLOY_PATH}"
+                        }
+                        if (params.DEPLOY_TOMCAT2) {
+                            sh "scp -o StrictHostKeyChecking=no -i \$SSH_KEY_PATH ${JAR_FILE} \$SSH_USER@${TOMCAT2_IP}:${DEPLOY_PATH}"
+                        }
+                    }
+                }
+            }
+        }
+
+        stage('Restart Tomcat') {
+            steps {
+                script {
+                    withCredentials([sshUserPrivateKey(
+                        credentialsId: env.SSH_CREDENTIALS_ID,
+                        keyFileVariable: 'SSH_KEY_PATH',
+                        usernameVariable: 'SSH_USER'
+                    )]) {
+                        if (params.DEPLOY_TOMCAT1) {
+                            sh """
+                                ssh -o StrictHostKeyChecking=no -i \$SSH_KEY_PATH \$SSH_USER@${TOMCAT1_IP} '
+                                    sudo /home/ubuntu/apache-tomcat-9.0.102/bin/shutdown.sh || true
+                                    sleep 5
+                                    sudo /home/ubuntu/apache-tomcat-9.0.102/bin/startup.sh
+                                '
+                            """
+                        }
+                        if (params.DEPLOY_TOMCAT2) {
+                            sh """
+                                ssh -o StrictHostKeyChecking=no -i \$SSH_KEY_PATH \$SSH_USER@${TOMCAT2_IP} '
+                                    sudo /home/ubuntu/apache-tomcat-9.0.102/bin/shutdown.sh || true
+                                    sleep 5
+                                    sudo /home/ubuntu/apache-tomcat-9.0.102/bin/startup.sh
+                                '
+                            """
+                        }
+                    }
+                }
+            }
+        }
+
+        stage('Verify Deployment') {
+            steps {
+                script {
+                    if (params.DEPLOY_TOMCAT1) {
+                        echo "Checking application on Tomcat1..."
+                        sh "curl -s -o /dev/null -w '%{http_code}' http://${TOMCAT1_IP}:8080/${DEPLOY_CONTEXT}/ || echo 'Tomcat1 not reachable'"
+                    }
+                    if (params.DEPLOY_TOMCAT2) {
+                        echo "Checking application on Tomcat2..."
+                        sh "curl -s -o /dev/null -w '%{http_code}' http://${TOMCAT2_IP}:8080/${DEPLOY_CONTEXT}/ || echo 'Tomcat2 not reachable'"
+                    }
+                }
+            }
+        }
+    }
+}
