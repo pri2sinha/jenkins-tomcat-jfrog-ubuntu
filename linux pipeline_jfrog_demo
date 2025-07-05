@@ -1,0 +1,93 @@
+pipeline {
+    agent any
+
+    environment {
+        JAR_NAME = "upi-acq-vo-1.0.121.jar"
+        ARTIFACTORY_REPO = "example-repo-local"
+        ARTIFACTORY_URL = "http://13.235.16.69:8081/artifactory"
+        DEPLOY_PATH = "/home/ec2-user"
+        DEPLOY_CONTEXT = "upi-acq-vo"
+        SSH_CREDENTIALS_ID = "82e9400e-028c-4ab0-a3bf-8277515aea2b"
+        JAR_FILE = "${env.WORKSPACE}/${env.JAR_NAME}"
+        TOMCAT1_IP = "13.201.185.153"
+        ARTIFACTORY_USER = "admin"
+        ARTIFACTORY_PASSWORD = "password" // ❗ Use Jenkins secret credentials in production
+    }
+
+    stages {
+
+        stage('Install JFrog CLI') {
+            steps {
+                sh '''
+                    curl -fL https://releases.jfrog.io/artifactory/jfrog-cli/v2-jf/latest/jfrog-cli-linux-amd64/jfrog -o jfrog
+                    chmod +x jfrog
+                '''
+            }
+        }
+
+        stage('Upload to JFrog Artifactory') {
+            steps {
+                sh """
+                    ./jfrog rt u "${JAR_FILE}" "${ARTIFACTORY_REPO}/${JAR_NAME}" \
+                    --url="${ARTIFACTORY_URL}" \
+                    --user="${ARTIFACTORY_USER}" \
+                    --password="${ARTIFACTORY_PASSWORD}"
+                """
+            }
+        }
+
+        stage('Download from JFrog & Deploy to Tomcat1') {
+            steps {
+                script {
+                    withCredentials([sshUserPrivateKey(
+                        credentialsId: env.SSH_CREDENTIALS_ID,
+                        keyFileVariable: 'SSH_KEY_PATH',
+                        usernameVariable: 'SSH_USER'
+                    )]) {
+
+                        def downloadCommand = """
+                            curl -u ${ARTIFACTORY_USER}:${ARTIFACTORY_PASSWORD} -O "${ARTIFACTORY_URL}/${ARTIFACTORY_REPO}/${JAR_NAME}"
+                            mv ${JAR_NAME} ${DEPLOY_PATH}/
+                        """
+
+                        sh """
+                            ssh -o StrictHostKeyChecking=no -i \$SSH_KEY_PATH \$SSH_USER@${TOMCAT1_IP} '${downloadCommand}'
+                        """
+                    }
+                }
+            }
+        }
+
+        stage('Restart Tomcat1') {
+            steps {
+                script {
+                    withCredentials([sshUserPrivateKey(
+                        credentialsId: env.SSH_CREDENTIALS_ID,
+                        keyFileVariable: 'SSH_KEY_PATH',
+                        usernameVariable: 'SSH_USER'
+                    )]) {
+
+                        def restartScript = '''
+                            sudo /home/ec2-user/apache-tomcat-9.0.105/bin/shutdown.sh || true
+                            sleep 5
+                            sudo /home/ec2-user/apache-tomcat-9.0.105/bin/startup.sh
+                        '''
+
+                        sh """
+                            ssh -o StrictHostKeyChecking=no -i \$SSH_KEY_PATH \$SSH_USER@${TOMCAT1_IP} '${restartScript}'
+                        """
+                    }
+                }
+            }
+        }
+
+        stage('Verify Deployment on Tomcat1') {
+            steps {
+                echo "Checking Tomcat1..."
+                sh """
+                    curl -s -o /dev/null -w '%{http_code}' http://${TOMCAT1_IP}:8080/${DEPLOY_CONTEXT}/ || echo 'Tomcat1 not reachable'
+                """
+            }
+        }
+    }
+}
